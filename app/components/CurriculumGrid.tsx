@@ -3,7 +3,7 @@
 import React, { useRef, useState, useCallback } from "react";
 import {
   Calculator, Shapes, Atom, FlaskConical, Microscope, Code,
-  Download, ArrowLeft, FileText,
+  Download, ArrowLeft, FileText, Plus,
   Dna, Telescope, Binary, Compass, Orbit, Brain,
   Globe, Cpu, Activity, Gauge,
 } from "lucide-react";
