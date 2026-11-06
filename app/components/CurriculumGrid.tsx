@@ -1,276 +1,254 @@
 "use client";
 
-import React, { useRef, useState, useCallback } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
-  Calculator, Shapes, Atom, FlaskConical, Microscope, Code,
-  Download, ArrowLeft, FileText, Plus,
-  Dna, Telescope, Binary, Compass, Orbit, Brain,
-  Globe, Cpu, Activity, Gauge,
+  BookOpen, BookOpenText, Microscope, Network, Biohazard, Droplets, Sprout,
+  PawPrint, Snail, Bug, Brain, Download, FileText, SearchX,
 } from "lucide-react";
-import { useAppContext, Unit } from "../context/AppContext";
+import { useAppContext, Unit, Point } from "../context/AppContext";
+import { CHAPTER_RANGES } from "../lib/pageHighlight";
 
-/* ─── Icon maps — normal (teal on black) and inverted (black on teal) ─── */
-const iconMapNormal: Record<string, React.ReactNode> = {
-  Calculator:  <Calculator  className="h-6 w-6 text-teal-600" />,
-  Shapes:      <Shapes      className="h-6 w-6 text-teal-600" />,
-  Atom:        <Atom        className="h-6 w-6 text-teal-600" />,
-  FlaskConical:<FlaskConical className="h-6 w-6 text-teal-600" />,
-  Microscope:  <Microscope  className="h-6 w-6 text-teal-600" />,
-  Code:        <Code        className="h-6 w-6 text-teal-600" />,
-  Dna:         <Dna         className="h-6 w-6 text-teal-600" />,
-  Telescope:   <Telescope   className="h-6 w-6 text-teal-600" />,
-  Binary:      <Binary      className="h-6 w-6 text-teal-600" />,
-  Compass:     <Compass     className="h-6 w-6 text-teal-600" />,
-  Orbit:       <Orbit       className="h-6 w-6 text-teal-600" />,
-  Brain:       <Brain       className="h-6 w-6 text-teal-600" />,
-  Globe:       <Globe       className="h-6 w-6 text-teal-600" />,
-  Cpu:         <Cpu         className="h-6 w-6 text-teal-600" />,
-  Activity:    <Activity    className="h-6 w-6 text-teal-600" />,
-  Gauge:       <Gauge       className="h-6 w-6 text-teal-600" />,
+/** أول صفحة للفصل في الكتاب كاملاً */
+const firstPage = (u: Unit) => CHAPTER_RANGES.find((c) => c.chapter === u.chapter)?.from ?? 1;
+
+type IconType = React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+
+// أيقونات Lucide الجاهزة — المفاتيح تطابق حقل icon في AppContext
+const icons: Record<string, IconType> = {
+  BookOpenText, Microscope, Network, Biohazard, Droplets, Sprout, PawPrint, Snail, Bug,
 };
 
-const iconMapInverted: Record<string, React.ReactNode> = {
-  Calculator:  <Calculator  className="h-6 w-6 text-black" />,
-  Shapes:      <Shapes      className="h-6 w-6 text-black" />,
-  Atom:        <Atom        className="h-6 w-6 text-black" />,
-  FlaskConical:<FlaskConical className="h-6 w-6 text-black" />,
-  Microscope:  <Microscope  className="h-6 w-6 text-black" />,
-  Code:        <Code        className="h-6 w-6 text-black" />,
-  Dna:         <Dna         className="h-6 w-6 text-black" />,
-  Telescope:   <Telescope   className="h-6 w-6 text-black" />,
-  Binary:      <Binary      className="h-6 w-6 text-black" />,
-  Compass:     <Compass     className="h-6 w-6 text-black" />,
-  Orbit:       <Orbit       className="h-6 w-6 text-black" />,
-  Brain:       <Brain       className="h-6 w-6 text-black" />,
-  Globe:       <Globe       className="h-6 w-6 text-black" />,
-  Cpu:         <Cpu         className="h-6 w-6 text-black" />,
-  Activity:    <Activity    className="h-6 w-6 text-black" />,
-  Gauge:       <Gauge       className="h-6 w-6 text-black" />,
-};
+/** مدة الضغط المطوّل (اختصار لفتح يزيد) */
+const LONG_PRESS_MS = 550;
+/** حركة أكبر من هذا = تمرير، وليست ضغطة */
+const MOVE_SLOP = 10;
 
-/* ─── Card body — rendered twice (normal + inverted) ─── */
-function CardBody({
-  unit,
-  inverted,
-  onBrowse,
-}: {
-  unit: Unit;
-  inverted: boolean;
-  onBrowse: () => void;
-}) {
-  const icons = inverted ? iconMapInverted : iconMapNormal;
-
-  return (
-    <div
-      className={`relative flex flex-col h-full w-full p-5 ${
-        inverted ? "bg-teal-500" : "bg-black"
-      }`}
-    >
-      {/* Icon */}
-      <div className="mb-4 flex justify-start mt-2">
-        {icons[unit.icon] ?? <Code className={`h-6 w-6 ${inverted ? "text-black" : "text-teal-600"}`} />}
-      </div>
-
-      {/* Title */}
-      <h3 className={`mb-2 text-lg font-semibold transition-colors ${inverted ? "text-black" : "text-white group-hover:text-teal-400"}`}>
-        {unit.title}
-      </h3>
-
-      {/* Description */}
-      <p className={`mb-5 flex-1 text-sm leading-relaxed ${inverted ? "text-black/70" : "text-gray-400"}`}>
-        {unit.description}
-      </p>
-
-      {/* Bottom */}
-      <div className="flex flex-col gap-3">
-        {/* Counts */}
-        <div className={`flex items-center gap-4 text-xs ${inverted ? "text-black/70" : "text-gray-500"}`}>
-          <span className="flex items-center gap-1.5">
-            <FileText className={`h-3.5 w-3.5 ${inverted ? "text-black" : "text-teal-600"}`} />
-            {unit.lessonCount} دروس
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Download className={`h-3.5 w-3.5 ${inverted ? "text-black" : "text-teal-600"}`} />
-            {unit.fileCount} ملفات
-          </span>
-        </div>
-
-        {/* Buttons */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); alert(`جاري تحميل ملخص PDF لوحدة: ${unit.title}`); }}
-            className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors cursor-pointer w-full sm:w-auto ${
-              inverted
-                ? "border-black/30 bg-transparent text-black hover:bg-black/10"
-                : "border-teal-800 bg-black text-teal-500 hover:border-teal-600 hover:text-teal-400"
-            }`}
-          >
-            <Download className="h-3.5 w-3.5" />
-            تحميل PDF
-          </button>
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onBrowse(); }}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors cursor-pointer w-full sm:w-auto ${
-              inverted
-                ? "bg-black text-teal-400 hover:bg-black/80"
-                : "bg-teal-700 text-white hover:bg-teal-600"
-            }`}
-          >
-            تصفح الدروس
-            <ArrowLeft className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+/** توحيد الحروف العربية للبحث: إزالة التشكيل وتوحيد الألف والياء والتاء المربوطة */
+function normalize(s: string) {
+  return s
+    .replace(/[\u064B-\u0652\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .toLowerCase();
 }
 
-/* ─── Long-press duration ─── */
-const LONG_PRESS_MS = 1200;
+function centerOf(el: Element): Point {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
 
 function UnitCard({
-  unit, onBrowse, onLongPress,
+  unit,
+  featured = false,
+  index = 0,
+  onAsk,
+  onOpen,
 }: {
   unit: Unit;
-  onBrowse: () => void;
-  onLongPress: () => void;
+  index?: number;
+  featured?: boolean;
+  onAsk: (origin: Point) => void;
+  onOpen: () => void;
 }) {
-  const [progress, setProgress] = useState(0); // 0-100
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rafRef   = useRef<number | null>(null);
-  const startRef = useRef(0);
-  const fired    = useRef(false);
+  const Icon = icons[unit.icon] ?? BookOpenText;
+  const cardRef = useRef<HTMLElement>(null);
+  const fillRef = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const raf = useRef<number | null>(null);
+  const start = useRef<Point | null>(null);
+  const fired = useRef(false);
+  const [pressing, setPressing] = useState(false);
 
-  const startPress = useCallback(() => {
-    fired.current = false;
-    startRef.current = performance.now();
-
-    const tick = () => {
-      const elapsed = performance.now() - startRef.current;
-      const START_DELAY_MS = 300; // Delay before showing animation
-      
-      if (elapsed > START_DELAY_MS) {
-        const animationElapsed = elapsed - START_DELAY_MS;
-        const animationDuration = LONG_PRESS_MS - START_DELAY_MS;
-        const pct = Math.min((animationElapsed / animationDuration) * 100, 100);
-        setProgress(pct);
-      } else {
-        setProgress(0);
-      }
-      
-      if (elapsed < LONG_PRESS_MS) {
-        rafRef.current = requestAnimationFrame(tick);
-      }
-    };
-    rafRef.current = requestAnimationFrame(tick);
-
-    timerRef.current = setTimeout(() => {
-      fired.current = true;
-      setProgress(0);
-      onLongPress();
-    }, LONG_PRESS_MS);
-  }, [onLongPress]);
-
-  const cancelPress = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (rafRef.current)   cancelAnimationFrame(rafRef.current);
-    setProgress(0);
+  const resetVisual = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    if (raf.current) cancelAnimationFrame(raf.current);
+    timer.current = null;
+    raf.current = null;
+    start.current = null;
+    if (fillRef.current) fillRef.current.style.clipPath = "inset(100% 0 0 0)";
+    setPressing(false);
   }, []);
 
-  const handleClick = () => { if (!fired.current) onBrowse(); };
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    // الأزرار والروابط داخل البطاقة لها سلوكها الخاص
+    if ((e.target as HTMLElement).closest("a, button")) return;
+
+    fired.current = false;
+    start.current = { x: e.clientX, y: e.clientY };
+    setPressing(true); // استجابة فورية لحظة الضغط
+
+    const t0 = performance.now();
+    const tick = () => {
+      const p = Math.min((performance.now() - t0) / LONG_PRESS_MS, 1);
+      // تعبئة متصلة 1:1 مع الزمن — تُحدَّث مباشرة بدون إعادة رسم React
+      if (fillRef.current) fillRef.current.style.clipPath = `inset(${(1 - p) * 100}% 0 0 0)`;
+      if (p < 1) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+
+    timer.current = setTimeout(() => {
+      fired.current = true;
+      const origin = start.current ?? { x: e.clientX, y: e.clientY };
+      if (typeof navigator !== "undefined") navigator.vibrate?.(12);
+      resetVisual();
+      onAsk(origin);
+    }, LONG_PRESS_MS);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!start.current) return;
+    if (
+      Math.abs(e.clientX - start.current.x) > MOVE_SLOP ||
+      Math.abs(e.clientY - start.current.y) > MOVE_SLOP
+    ) {
+      resetVisual();
+    }
+  };
+
+  const onClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("a, button")) return;
+    if (fired.current) {
+      fired.current = false;
+      return;
+    }
+    onOpen();
+  };
+
+  const chapterLabel = unit.chapter ? `الفصل ${unit.chapter}` : "الكتاب";
 
   return (
-    <div
-      onClick={handleClick}
-      onMouseDown={startPress}
-      onMouseUp={cancelPress}
-      onMouseLeave={cancelPress}
-      onTouchStart={startPress}
-      onTouchEnd={cancelPress}
-      onTouchCancel={cancelPress}
-      onContextMenu={(e) => e.preventDefault()}
-      className="group relative rounded-2xl border border-teal-800 hover:border-teal-500 overflow-hidden cursor-pointer select-none transition-colors"
-      style={{ minHeight: 280 }}
-    >
-      {/* ── Layer 1: Normal (black bg) ── */}
-      <div className="relative z-0 h-full">
-        <CardBody
-          unit={unit}
-          inverted={false}
-          onBrowse={onBrowse}
-        />
-      </div>
-
-      {/* ── Layer 2: Inverted (teal bg) — clipped to fill from bottom ── */}
-      {progress > 0 && (
-        <div
-          className="absolute inset-0 z-10 pointer-events-none"
-          style={{ clipPath: `inset(${100 - progress}% 0 0 0)` }}
-        >
-          <CardBody
-            unit={unit}
-            inverted={true}
-            onBrowse={onBrowse}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AddUnitCard({ onClick }: { onClick: () => void }) {
-  return (
-    <button
+    <article
+      ref={cardRef}
+      data-pressing={pressing}
+      style={{ "--i": index } as React.CSSProperties}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={resetVisual}
+      onPointerLeave={resetVisual}
+      onPointerCancel={resetVisual}
       onClick={onClick}
-      className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-teal-800 bg-black p-5 transition-colors hover:border-teal-600"
+      onContextMenu={(e) => e.preventDefault()}
+      title="اضغط لفتح الفصل · اضغط مطوّلاً لسؤال يزيد"
+      className={`unit-card card-surface group relative flex cursor-pointer select-none overflow-hidden rounded-3xl border border-[#1f2b2b] hover:border-teal-600 ${
+        featured ? "col-span-full flex-col gap-6 p-6 sm:flex-row sm:items-center sm:p-8" : "flex-col p-6"
+      }`}
     >
-      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-teal-800 bg-black">
-        <Plus className="h-6 w-6 text-teal-600" />
+      {/* تعبئة الضغط المطوّل — تبدأ من أول إطار */}
+      <div
+        ref={fillRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-teal-900"
+        style={{ clipPath: "inset(100% 0 0 0)" }}
+      />
+
+      <div className={`relative flex ${featured ? "items-center gap-5 sm:flex-1" : "flex-col"}`}>
+        <div className={`flex items-center justify-between ${featured ? "" : "mb-5"}`}>
+          <span
+            className={`icon-tile flex items-center justify-center rounded-2xl ${
+              featured ? "h-16 w-16" : "h-12 w-12"
+            }`}
+          >
+            <Icon aria-hidden className={featured ? "h-8 w-8" : "h-6 w-6"} />
+          </span>
+          {!featured && (
+            <span className="rounded-full border border-[#1f2b2b] px-2.5 py-1 text-xs font-medium text-gray-300">
+              {chapterLabel}
+            </span>
+          )}
+        </div>
+
+        <div className={featured ? "min-w-0" : ""}>
+          <h3 className={`font-bold text-white ${featured ? "text-3xl" : "text-2xl"}`}>{unit.title}</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-300 sm:text-[15px]">{unit.description}</p>
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-gray-400">
+            {unit.pageCount} صفحة
+            <FileText aria-hidden className="h-3.5 w-3.5 text-teal-500" />
+          </p>
+        </div>
       </div>
-      <p className="text-sm font-medium text-teal-600">إضافة وحدة جديدة</p>
-      <p className="mt-1 text-xs text-gray-600">اضغط لإنشاء وحدة دراسية جديدة</p>
-    </button>
+
+      {!featured && <div className="flex-1" />}
+
+      <div className={`relative flex items-center gap-2 ${featured ? "sm:shrink-0" : "mt-6"}`}>
+        <button
+          type="button"
+          onClick={(e) => onAsk(centerOf(e.currentTarget))}
+          className="press flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-600 sm:flex-none"
+        >
+          اسأل يزيد
+          <Brain aria-hidden className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="press flex h-11 items-center justify-center gap-2 rounded-xl border border-[#2a3838] px-4 text-sm font-medium text-gray-100 hover:border-teal-600 hover:text-white"
+        >
+          فتح
+          <BookOpen aria-hidden className="h-4 w-4" />
+        </button>
+        <a
+          href={unit.pdfUrl}
+          download
+          aria-label={`تحميل ${unit.title} PDF`}
+          title="تحميل PDF"
+          className="press flex h-11 w-11 items-center justify-center rounded-xl border border-[#2a3838] text-gray-300 hover:border-teal-600 hover:text-white"
+        >
+          <Download aria-hidden className="h-4 w-4" />
+        </a>
+      </div>
+    </article>
   );
 }
 
 export default function CurriculumGrid() {
-  const {
-    units, searchQuery,
-    setSelectedUnit,
-    setUnitChatUnit,
-  } = useAppContext();
+  const { units, searchQuery, setSearchQuery, setUnitChatUnit, openPage } = useAppContext();
 
-  const filteredUnits = units.filter(
-    (u) =>
-      u.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const q = normalize(searchQuery.trim());
+  const filtered = q
+    ? units.filter((u) =>
+        normalize(`${u.title} ${u.description} ${u.chapter ? `الفصل ${u.chapter}` : ""}`).includes(q)
+      )
+    : units;
+
+  const featured = !q ? filtered.find((u) => !u.chapter) : undefined;
+  const chapters = filtered.filter((u) => u !== featured);
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pb-20 sm:px-6">
+    <section aria-label="فصول الكتاب" className="mx-auto w-full max-w-7xl px-4 pb-28 sm:px-6">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {filteredUnits.map((unit) => (
+        {featured && (
+          <UnitCard
+            unit={featured}
+            featured
+            onAsk={(origin) => setUnitChatUnit(featured, origin)}
+            onOpen={() => openPage(firstPage(featured))}
+          />
+        )}
+        {chapters.map((unit, i) => (
           <UnitCard
             key={unit.id}
+            index={i + 1}
             unit={unit}
-            onBrowse={() => {
-              const url = unit.lessons?.[0]?.documents?.[0]?.url;
-              if (url) {
-                window.open(url, '_blank');
-              } else {
-                alert("عذراً، ملف الـ PDF غير متوفر لهذه الوحدة.");
-              }
-            }}
-            onLongPress={() => setUnitChatUnit(unit)}
+            onAsk={(origin) => setUnitChatUnit(unit, origin)}
+            onOpen={() => openPage(firstPage(unit))}
           />
         ))}
       </div>
 
-      {filteredUnits.length === 0 && (
-        <div className="py-20 text-center">
-          <p className="text-gray-500">لا توجد وحدات تطابق بحثك.</p>
+      {filtered.length === 0 && (
+        <div className="flex flex-col items-center py-20 text-center">
+          <SearchX aria-hidden className="h-10 w-10 text-gray-400" />
+          <p className="mt-4 text-base text-gray-300">لا يوجد فصل يطابق «{searchQuery}»</p>
+          <p className="mt-1 text-sm text-gray-400">جرّب كلمة أخرى، أو اسأل يزيد مباشرة.</p>
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="press mt-5 rounded-xl border border-[#2a3838] px-4 py-2 text-sm text-gray-100 hover:border-teal-600"
+          >
+            مسح البحث
+          </button>
         </div>
       )}
     </section>

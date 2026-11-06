@@ -1,37 +1,52 @@
 "use client";
 
 import React from "react";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 
 export default function HeroSearch() {
   const { searchQuery, setSearchQuery } = useAppContext();
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-10 pb-8 sm:pt-16 sm:pb-10 sm:px-6">
+    <section className="mx-auto w-full max-w-7xl px-4 pt-12 pb-8 sm:px-6 sm:pt-20 sm:pb-12">
       <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl leading-tight">
-          المنهج الدراسي
-        </h1>
-        <p className="mx-auto mt-3 sm:mt-4 max-w-2xl text-sm sm:text-base text-gray-400 leading-relaxed px-2">
-          تصفح وحداتك الدراسية، وصول إلى الدروس، تحميل الموارد، ومتابعة
-          تقدمك — كل ذلك في مكان واحد.
+        <p className="text-sm font-medium text-teal-400">السنة الأولى المشتركة · نظام المسارات</p>
+        <h1 className="mt-2 text-4xl font-bold text-white sm:text-5xl lg:text-6xl">الأحياء ١</h1>
+        <p className="mx-auto mt-4 max-w-xl px-2 text-base leading-relaxed text-gray-300 sm:text-lg">
+          تصفّح فصول الكتاب، وافتح ملفاتها، واسأل يزيد عن أي درس — يجيبك من نص الكتاب مع رقم الصفحة.
         </p>
       </div>
 
-      {/* Search Bar */}
-      <div className="mx-auto mt-7 sm:mt-10 max-w-2xl">
+      <form
+        role="search"
+        onSubmit={(e) => e.preventDefault()}
+        className="mx-auto mt-8 max-w-2xl sm:mt-10"
+      >
         <div className="relative">
-          <Search className="pointer-events-none absolute right-4 sm:right-5 top-1/2 h-4 w-4 sm:h-5 sm:w-5 -translate-y-1/2 text-teal-600" />
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute start-4 top-1/2 h-5 w-5 -translate-y-1/2 text-teal-500"
+          />
           <input
-            type="text"
+            type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="ابحث في الوحدات الدراسية..."
-            className="w-full rounded-full border border-teal-700 bg-black py-3 sm:py-3.5 pr-11 sm:pr-13 pl-4 sm:pl-5 text-sm text-white placeholder-gray-600 outline-none transition-colors focus:border-teal-500"
+            placeholder="ابحث عن فصل أو موضوع… مثل: الفطريات"
+            aria-label="ابحث في فصول الكتاب"
+            className="glass-bar w-full rounded-full py-3.5 ps-12 pe-12 text-base text-white placeholder-gray-500 outline-none transition-[border-color,box-shadow] focus:border-teal-500 focus:shadow-[0_0_0_4px_rgba(20,184,166,0.15)] [&::-webkit-search-cancel-button]:hidden"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              aria-label="مسح البحث"
+              className="press absolute end-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 hover:bg-[#1c2626] hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
-      </div>
+      </form>
     </section>
   );
 }

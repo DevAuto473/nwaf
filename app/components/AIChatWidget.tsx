@@ -1,423 +1,236 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Brain,
-  Send,
-  X,
-  User,
-  Bot,
-  Loader2,
-  FileText,
-  BookOpen,
-  AlertCircle,
-} from "lucide-react";
-import { useAppContext } from "../context/AppContext";
+import React, { useCallback, useEffect, useRef } from "react";
+import { Brain, ChevronDown, X } from "lucide-react";
+import { useAppContext, Unit } from "../context/AppContext";
+import { useYazidChat } from "./chat/useYazidChat";
+import { usePresence } from "./chat/usePresence";
+import { ChatComposer, ChatMessages, ChatSuggestions, YAZID_FOOTNOTE } from "./chat/ChatParts";
+import { useWorkspace } from "./useWorkspace";
 
-interface Message {
-  id: string;
-  role: "user" | "ai";
-  text: string;
-  isError?: boolean;
+function welcomeFor(unit: Unit | null) {
+  return unit
+    ? `هلا، أنا يزيد. اسألني عن فصل «${unit.title}» وأجيبك من الكتاب مع رقم الصفحة.`
+    : "هلا، أنا يزيد مساعدك في المذاكرة. اسألني عن أي موضوع في كتاب الأحياء ١.";
 }
 
-interface HistoryEntry {
-  role: "user" | "assistant";
-  content: string;
+const SUGGESTIONS_BOOK = [
+  "ما الفرق بين الفيروس والبكتيريا؟",
+  "ما ممالك التصنيف الست؟",
+  "ما خصائص المخلوقات الحية؟",
+  "اختبرني في التصنيف",
+  "ارسم لي خريطة ذهنية للتصنيف",
+  "سوِّ لي بطاقات مراجعة",
+];
+const SUGGESTIONS_UNIT = ["لخّص لي أهم أفكار الفصل", "ما المصطلحات المهمة؟", "اختبرني بثلاثة أسئلة", "ارسم خريطة ذهنية للفصل", "سوِّ لي بطاقات مراجعة"];
+
+/** إسقاط الزخم (من Apple): أين سيتوقف العنصر لو أكمل بسرعته الحالية */
+function project(velocity: number, decel = 0.998) {
+  return ((velocity / 1000) * decel) / (1 - decel);
 }
-
-// Extract text from a PDF blob URL using pdfjs-dist (loaded dynamically)
-async function extractPdfText(url: string): Promise<string> {
-  try {
-    // Dynamically import pdfjs-dist to avoid SSR issues
-    const pdfjs = await import("pdfjs-dist");
-    // Set worker path using the CDN (avoids bundling the heavy worker)
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-
-    const loadingTask = pdfjs.getDocument({ url });
-    const pdf = await loadingTask.promise;
-
-    let fullText = "";
-    const maxPages = Math.min(pdf.numPages, 20); // limit to 20 pages
-    for (let i = 1; i <= maxPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ("str" in item ? item.str : ""))
-        .join(" ");
-      fullText += pageText + "\n";
-    }
-    return fullText.trim();
-  } catch (e) {
-    console.warn("PDF extraction failed:", e);
-    return "";
-  }
+/** مقاومة مطاطية عند تجاوز الحد */
+function rubberband(overshoot: number, dimension: number, c = 0.55) {
+  return (overshoot * dimension * c) / (dimension + c * Math.abs(overshoot));
 }
 
 export default function AIChatWidget() {
-  const { isChatOpen, setIsChatOpen, selectedUnit } = useAppContext();
+  const { isChatOpen, setIsChatOpen, selectedUnit, setSelectedUnit, units, pendingAsk, clearPendingAsk, unitChatUnit } =
+    useAppContext();
+  const { mounted, visible } = usePresence(isChatOpen);
+  const ws = useWorkspace();
+  const slot = unitChatUnit ? undefined : ws.slots.chat;
+  const { messages, isLoading, send, reset } = useYazidChat(selectedUnit?.id ?? null, welcomeFor(null));
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "initial",
-      role: "ai",
-      text: "هلا، أنا يزيد مساعدكم الشخصي. وش حاب تسأل في المنهج؟",
-    },
-  ]);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [pdfCache, setPdfCache] = useState<Record<string, string>>({}); // url -> extracted text
-  const [pdfStatus, setPdfStatus] = useState<
-    "idle" | "loading" | "ready" | "none"
-  >("idle");
-  // Animation state
-  const [isPanelMounted, setIsPanelMounted] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  const drag = useRef<{ startY: number; lastY: number; lastT: number; v: number; dy: number } | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const close = useCallback(() => setIsChatOpen(false), [setIsChatOpen]);
 
-  // Sync panel mount with isChatOpen
+  // تغيير نطاق السؤال يبدأ محادثة جديدة
+  const scopeId = selectedUnit?.id ?? null;
   useEffect(() => {
-    if (isChatOpen) {
-      setIsExiting(false);
-      setIsPanelMounted(true);
-    }
-  }, [isChatOpen]);
+    reset(welcomeFor(selectedUnit));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeId, reset]);
 
-  // Trigger exit animation then unmount
-  const handleClose = () => {
-    setIsExiting(true);
-    setTimeout(() => {
-      setIsPanelMounted(false);
-      setIsChatOpen(false);
-      setIsExiting(false);
-    }, 180);
-  };
-
+  // طلب من عارض الكتاب: اضبط نطاق الفصل، افتح المحادثة، ثم أرسل
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Focus input when chat opens
-  useEffect(() => {
-    if (isChatOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
-  }, [isChatOpen]);
-
-  // Auto-extract PDFs from the selected unit whenever the unit changes
-  useEffect(() => {
-    if (!selectedUnit) return;
-
-    const pdfDocs = selectedUnit.lessons
-      .flatMap((l) => l.documents ?? [])
-      .filter((d) => d.type === "document" && d.url);
-
-    if (pdfDocs.length === 0) {
-      setPdfStatus("none");
+    if (!pendingAsk || unitChatUnit) return;
+    const target = units.find((u) => u.id === pendingAsk.unitId) ?? null;
+    if ((selectedUnit?.id ?? null) !== (target?.id ?? null)) {
+      setSelectedUnit(target); // يعيد هذا التأثير بعد تغيير النطاق
       return;
     }
+    if (!isChatOpen) setIsChatOpen(true);
+    if (isLoading) return;
+    send(pendingAsk.text, { mode: pendingAsk.mode, pages: pendingAsk.pages });
+    clearPendingAsk();
+  }, [pendingAsk, unitChatUnit, units, selectedUnit, setSelectedUnit, isChatOpen, setIsChatOpen, isLoading, send, clearPendingAsk]);
 
-    // Only extract PDFs not yet cached
-    const uncached = pdfDocs.filter((d) => d.url && !(d.url in pdfCache));
-    if (uncached.length === 0) {
-      setPdfStatus("ready");
-      return;
+  // التركيز: إلى الحقل عند الفتح، ويرجع للزر عند الإغلاق
+  useEffect(() => {
+    if (isChatOpen) {
+      wasOpen.current = true;
+      const t = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 120);
+      return () => clearTimeout(t);
     }
+    if (wasOpen.current && !mounted) fabRef.current?.focus();
+  }, [isChatOpen, mounted]);
 
-    setPdfStatus("loading");
-    Promise.all(
-      uncached.map(async (d) => {
-        const text = await extractPdfText(d.url!);
-        return [d.url!, text] as [string, string];
-      })
-    ).then((results) => {
-      const newEntries = Object.fromEntries(results);
-      setPdfCache((prev) => ({ ...prev, ...newEntries }));
-      setPdfStatus("ready");
-    });
-  }, [selectedUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!isChatOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isChatOpen, close]);
 
-  const getCombinedPdfText = useCallback((): string => {
-    if (!selectedUnit) return "";
-    return selectedUnit.lessons
-      .flatMap((l) => l.documents ?? [])
-      .filter((d) => d.type === "document" && d.url && pdfCache[d.url])
-      .map((d) => pdfCache[d.url!])
-      .join("\n\n")
-      .slice(0, 4000); // hard cap to avoid huge tokens
-  }, [selectedUnit, pdfCache]);
-
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || isLoading) return;
-
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      text,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-
-    const thinkingId = `ai-${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      { id: thinkingId, role: "ai", text: "…" },
-    ]);
-
-    try {
-      const context = selectedUnit
-        ? `${selectedUnit.title} — ${selectedUnit.description}`
-        : undefined;
-
-      const pdfText = getCombinedPdfText();
-
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          context,
-          history,
-          pdfText: pdfText || undefined,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === thinkingId
-              ? { ...m, text: data.error ?? "حدث خطأ غير متوقع.", isError: true }
-              : m
-          )
-        );
-        return;
-      }
-
-      const aiReply: string = data.reply;
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === thinkingId ? { ...m, text: aiReply } : m
-        )
-      );
-
-      // Update history for multi-turn conversation (keep last 6 turns to save tokens)
-      setHistory((prev) => {
-        const updated: HistoryEntry[] = [
-          ...prev,
-          { role: "user", content: text },
-          { role: "assistant", content: aiReply },
-        ];
-        return updated.slice(-12); // keep last 6 pairs = 12 entries
-      });
-    } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === thinkingId
-            ? {
-                ...m,
-                text: "تعذر الوصول إلى الخادم. تحقق من اتصالك بالإنترنت.",
-                isError: true,
-              }
-            : m
-        )
-      );
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
+  // ── سحب اللوحة للأسفل لإغلاقها (الجوال) ──
+  const onDragStart = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { startY: e.clientY, lastY: e.clientY, lastT: e.timeStamp, v: 0, dy: 0 };
+    panelRef.current?.setAttribute("data-dragging", "true");
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    const panel = panelRef.current;
+    if (!d || !panel) return;
+    const dt = e.timeStamp - d.lastT;
+    if (dt > 0) d.v = 0.8 * ((e.clientY - d.lastY) / dt) * 1000 + 0.2 * d.v;
+    d.lastY = e.clientY;
+    d.lastT = e.timeStamp;
+    const raw = e.clientY - d.startY;
+    d.dy = raw < 0 ? -rubberband(-raw, panel.offsetHeight) : raw; // يتبع الإصبع 1:1
+    panel.style.transform = `translateY(${d.dy}px)`;
+  };
+  const onDragEnd = () => {
+    const d = drag.current;
+    const panel = panelRef.current;
+    drag.current = null;
+    if (!d || !panel) return;
+    panel.removeAttribute("data-dragging");
+    panel.style.transform = ""; // الانتقال يكمل من الموضع الحالي
+    if (d.dy + project(d.v) > panel.offsetHeight * 0.35) close();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const pdfCount =
-    selectedUnit?.lessons
-      .flatMap((l) => l.documents ?? [])
-      .filter((d) => d.type === "document" && d.url).length ?? 0;
+  const showSuggestions = messages.length === 1 && !isLoading;
+  const chapters = units.filter((u) => u.chapter);
 
   return (
     <>
-      {/* Floating Button */}
       {!isChatOpen && (
         <button
+          ref={fabRef}
           onClick={() => setIsChatOpen(true)}
-          title="يزيد (مساعدك في المذاكرة)"
-          className="fab-enter fixed bottom-5 left-4 sm:bottom-6 sm:left-6 z-40 flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full border border-teal-700 bg-black transition-all hover:border-teal-500 hover:scale-110 shadow-lg shadow-teal-900/30"
+          aria-label="افتح يزيد، مساعدك في المذاكرة"
+          className="yz-fab press fixed bottom-5 left-4 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-lg shadow-teal-900/40 sm:bottom-6 sm:left-6"
         >
-          <Brain className="h-5 w-5 sm:h-6 sm:w-6 text-teal-500" />
-          {/* Pulse ring */}
-          <span className="absolute inset-0 rounded-full border border-teal-700 animate-ping opacity-30" />
+          <span aria-hidden className="pointer-events-none absolute inset-[-3px] -z-10">
+            <span className="nebula-blob-a absolute inset-0 rounded-full opacity-60 blur-[3px] bg-[conic-gradient(from_0deg,rgba(34,197,94,0.9),rgba(20,184,166,0.15)_30%,rgba(168,85,247,0.9)_55%,rgba(20,184,166,0.15)_80%,rgba(34,197,94,0.9))]" />
+            <span className="nebula-blob-b absolute inset-0 rounded-full opacity-45 blur-[4px] bg-[conic-gradient(from_90deg,rgba(168,85,247,0.8),rgba(34,197,94,0.1)_35%,rgba(20,184,166,0.9)_60%,rgba(168,85,247,0.1)_85%,rgba(168,85,247,0.8))]" />
+          </span>
+          <span aria-hidden className="nebula-blob-core absolute inset-[2px] rounded-full bg-[#050808]" />
+          <Brain aria-hidden className="relative z-10 h-6 w-6 text-teal-400" />
         </button>
       )}
 
-      {/* Chat Panel */}
-      {isPanelMounted && (
-        <div
-          dir="rtl"
-          className={`fixed inset-0 sm:inset-auto sm:bottom-6 sm:left-6 z-50 flex flex-col sm:h-[520px] sm:w-[400px] rounded-none sm:rounded-2xl border-0 sm:border border-teal-800/70 bg-[#080c0c] shadow-2xl shadow-black/60 ${
-            isExiting ? "chat-panel-exit" : "chat-panel-enter"
-          }`}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-teal-800/60 px-4 py-3 shrink-0 bg-black/60 rounded-t-2xl">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-900/60 border border-teal-700/40">
-                <Brain className="h-4 w-4 text-teal-400" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-white leading-tight">
-                  يزيد
-                </p>
-                <p className="text-[10px] text-teal-600 leading-tight">
-                  {selectedUnit ? selectedUnit.title : "اختر وحدة للبدء"}
-                </p>
-              </div>
+      {mounted && (
+        <>
+          {/* تعتيم خفيف على الجوال فقط — على الكمبيوتر اللوحة لا تقطع التصفح */}
+          <div
+            aria-hidden
+            data-state={visible ? "open" : "closed"}
+            onClick={close}
+            className="yz-scrim fixed inset-0 bg-black/50 sm:hidden"
+            style={{ zIndex: ws.z("chat") - 1 }}
+          />
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby="yz-title"
+            data-state={visible ? "open" : "closed"}
+            onPointerDownCapture={() => ws.front !== "chat" && ws.bringToFront("chat")}
+            style={{
+              zIndex: ws.z("chat"),
+              // مع الكتاب أو الاختبار: بطول الشاشة في عمودها من مساحة العمل
+              ...(slot ? { left: slot.left, width: slot.width, top: 16, bottom: 16, height: "auto", maxHeight: "none" } : {}),
+            }}
+            className="yz-panel ws-morph fixed inset-x-0 bottom-0 flex h-[88dvh] flex-col overflow-hidden rounded-t-3xl border border-[#1f2b2b] bg-[#070b0b] shadow-2xl shadow-black/70 sm:inset-x-auto sm:bottom-6 sm:left-6 sm:h-[600px] sm:max-h-[calc(100dvh-3rem)] sm:w-[420px] sm:rounded-3xl"
+          >
+            {/* مقبض السحب (جوال) */}
+            <div
+              onPointerDown={onDragStart}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+              onPointerCancel={onDragEnd}
+              className="flex h-6 shrink-0 cursor-grab touch-none items-center justify-center sm:hidden"
+            >
+              <span className="h-1.5 w-10 rounded-full bg-[#4a5252]" />
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* PDF status badge */}
-              {selectedUnit && (
-                <span
-                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-medium border ${
-                    pdfStatus === "ready" && pdfCount > 0
-                      ? "border-teal-700 bg-teal-950 text-teal-400"
-                      : pdfStatus === "loading"
-                      ? "border-yellow-800 bg-yellow-950/50 text-yellow-500"
-                      : "border-gray-800 bg-gray-950 text-gray-500"
-                  }`}
-                >
-                  {pdfStatus === "loading" ? (
-                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                  ) : (
-                    <FileText className="h-2.5 w-2.5" />
-                  )}
-                  {pdfStatus === "loading"
-                    ? "جارٍ قراءة PDF..."
-                    : pdfCount > 0
-                    ? `${pdfCount} ملف PDF`
-                    : "لا توجد ملفات"}
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#1f2b2b] px-4 pb-3 sm:pt-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="icon-tile flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
+                  <Brain aria-hidden className="h-5 w-5" />
                 </span>
-              )}
-
-              <button
-                onClick={handleClose}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-teal-900/30 transition-colors"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Unit context strip */}
-          {selectedUnit && (
-            <div className="flex items-center gap-2 border-b border-teal-900/40 px-4 py-2 bg-teal-950/20 shrink-0">
-              <BookOpen className="h-3 w-3 text-teal-600 shrink-0" />
-              <p className="text-[10px] text-teal-600 truncate">
-                السياق الحالي: <span className="text-teal-400">{selectedUnit.title}</span>
-                {pdfStatus === "ready" && pdfCount > 0 && (
-                  <span className="text-teal-600"> · سيبحث في {pdfCount} ملف PDF</span>
-                )}
-              </p>
-            </div>
-          )}
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-thin">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex gap-2.5 ${
-                  msg.role === "user" ? "flex-row" : "flex-row-reverse"
-                }`}
-              >
-                {/* Avatar */}
-                <div
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full mt-0.5 ${
-                    msg.role === "user"
-                      ? "bg-teal-900 border border-teal-700"
-                      : msg.isError
-                      ? "bg-red-950 border border-red-800"
-                      : "bg-black border border-teal-800"
-                  }`}
-                >
-                  {msg.role === "user" ? (
-                    <User className="h-3 w-3 text-teal-400" />
-                  ) : msg.isError ? (
-                    <AlertCircle className="h-3 w-3 text-red-400" />
-                  ) : (
-                    <Bot className="h-3 w-3 text-teal-500" />
-                  )}
-                </div>
-
-                {/* Bubble */}
-                <div
-                  className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-xs sm:text-[13px] leading-relaxed whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-teal-900/40 border border-teal-800/60 text-white rounded-tr-sm"
-                      : msg.isError
-                      ? "bg-red-950/40 border border-red-800/40 text-red-300 rounded-tl-sm"
-                      : msg.text === "…"
-                      ? "bg-black border border-teal-900/40 text-teal-600 rounded-tl-sm"
-                      : "bg-black border border-teal-900/40 text-gray-100 rounded-tl-sm"
-                  }`}
-                >
-                  {msg.text === "…" ? (
-                    <span className="flex items-center gap-1.5">
-                      <Loader2 className="h-3 w-3 animate-spin text-teal-500" />
-                      <span className="text-teal-600 text-[11px]">يفكر…</span>
-                    </span>
-                  ) : (
-                    msg.text
-                  )}
+                <div className="min-w-0">
+                  <p id="yz-title" className="text-base font-semibold text-white">يزيد</p>
+                  <div className="relative mt-0.5">
+                    <label htmlFor="yz-scope" className="sr-only">نطاق السؤال</label>
+                    <select
+                      id="yz-scope"
+                      value={selectedUnit?.id ?? ""}
+                      onChange={(e) => setSelectedUnit(units.find((u) => u.id === e.target.value) ?? null)}
+                      className="max-w-[220px] cursor-pointer appearance-none truncate rounded-lg bg-transparent py-0.5 pe-6 text-sm text-teal-300 outline-none hover:text-teal-200 [&>option]:bg-black [&>option]:text-white"
+                    >
+                      <option value="">كل الكتاب</option>
+                      {chapters.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          الفصل {u.chapter}: {u.title}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown aria-hidden className="pointer-events-none absolute end-0 top-1/2 h-4 w-4 -translate-y-1/2 text-teal-400" />
+                  </div>
                 </div>
               </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input */}
-          <div className="border-t border-teal-800/50 p-3 shrink-0 bg-black/40 rounded-b-2xl">
-            <div className="flex items-center gap-2">
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={isLoading}
-                placeholder="اطرح سؤالاً عن الدرس..."
-                className="flex-1 rounded-xl border border-teal-800/60 bg-black/60 px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none transition-colors focus:border-teal-600 disabled:opacity-50"
-              />
               <button
-                onClick={handleSend}
-                disabled={!input.trim() || isLoading}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-700 text-white transition-all hover:bg-teal-600 disabled:opacity-30 shrink-0 hover:scale-105"
+                onClick={close}
+                aria-label="إغلاق"
+                className="press flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-[#1c2626] hover:text-white"
               >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
+                <X aria-hidden className="h-5 w-5" />
               </button>
             </div>
-            <p className="mt-1.5 text-center text-[9px] text-gray-700">
-            nemotron-lightning · يبحث في محتوى الكتاب · مجاني
-            </p>
+
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+              <ChatMessages
+                messages={messages}
+                onAsk={send}
+                unitId={selectedUnit?.id ?? null}
+                unitTitle={selectedUnit?.title ?? "كل الكتاب"}
+              />
+              {showSuggestions && (
+                <div className="mt-4">
+                  <ChatSuggestions items={selectedUnit ? SUGGESTIONS_UNIT : SUGGESTIONS_BOOK} onPick={send} />
+                </div>
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-[#1f2b2b] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <ChatComposer
+                onSend={send}
+                busy={isLoading}
+                placeholder={selectedUnit ? `اسأل عن «${selectedUnit.title}»…` : "اسأل عن أي درس…"}
+                textareaRef={inputRef}
+              />
+              <p className="mt-2 text-center text-xs text-gray-400">{YAZID_FOOTNOTE}</p>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </>
   );

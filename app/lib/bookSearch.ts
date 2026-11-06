@@ -186,3 +186,34 @@ export async function search(query: string, unit: number | null, k = 10): Promis
   // ترتيب حسب موضعها في الكتاب لسياق متصل
   return [...chosen].sort((a, b) => a - b).map((i) => idx.chunks[i]);
 }
+
+/** عينة مقاطع موزعة على الوحدة (أو الكتاب) — لاختبار عام بدون موضوع محدد. */
+export async function sampleChunks(unit: number | null, k = 14): Promise<Chunk[]> {
+  const idx = await loadIndex();
+  if (!idx) return [];
+  // unit1 هو الكتاب كاملاً: بدون وحدة محددة نأخذ من الفصول (2..9) لتجنب التكرار
+  const pool = idx.chunks.filter((c) =>
+    unit != null ? c.unit === unit : c.unit !== 1
+  ).filter((c) => c.text.length > 200);
+  if (pool.length <= k) return pool;
+  const step = pool.length / k;
+  const offset = Math.random() * step;
+  const picked: Chunk[] = [];
+  for (let i = 0; i < k; i++) picked.push(pool[Math.floor(offset + i * step)]);
+  return picked;
+}
+
+/** نص صفحات محددة من الكتاب كاملاً (من..إلى شاملة) مع وسم [صفحة N] */
+export async function getPagesText(from: number, to: number): Promise<string> {
+  const dir = path.join(process.cwd(), "units", "pages", "unit1");
+  const parts: string[] = [];
+  for (let p = from; p <= to; p++) {
+    try {
+      const t = (await fs.readFile(path.join(dir, `page-${String(p).padStart(3, "0")}.md`), "utf-8")).trim();
+      if (t.length > 20) parts.push(`[صفحة ${p}]\n${t}`);
+    } catch {
+      /* صفحة غير موجودة */
+    }
+  }
+  return parts.join("\n\n");
+}

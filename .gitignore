@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# نسخ احتياطية ومخلفات محلية — لا ترفع
+/backup-*/
+/_to_delete/
+/nwaf-main/

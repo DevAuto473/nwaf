@@ -1,184 +1,317 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @font-face {
   font-family: 'Zain';
   src: url('https://cdn.jsdelivr.net/gh/DevAuto473/myfonts@main/fonts/1788464373567-alfontcomzainpcv2-VF.ttf') format('truetype');
+  font-weight: 200 900;
   font-display: swap;
 }
 
 :root {
   --background: #000000;
   --foreground: #ffffff;
-  --teal-600: #0d9488;
-  --teal-700: #0f766e;
-  --teal-800: #115e59;
-  --teal-900: #134e4a;
-  --gray-muted: #9ca3af;
-  --font-zain: 'Zain', sans-serif;
-  --font-ibm: 'IBM Plex Sans Arabic', sans-serif;
+  --font-zain: 'Zain', 'IBM Plex Sans Arabic', sans-serif;
+  --font-ibm: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  /* منحنى قريب من sheet في iOS — بدون ارتداد (critically damped) */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  /* نابض خفيف: يتجاوز الهدف ~2% ثم يستقر — حركة حية بدون مبالغة */
+  --spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001 85.9%, 1);
+  --surface: #0a0e0e;
+  --glass: #0d1414;
+  --hairline: #1c2626;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-ibm);
-  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-zain);
 }
 
+html { color-scheme: dark; -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+button, a, input, [role="button"], [role="tab"], [role="radio"] { touch-action: manipulation; }
 body {
-  background: #000000;
-  color: #ffffff;
-  font-family: 'IBM Plex Sans Arabic', sans-serif;
-  direction: rtl;
+  background: #000;
+  color: #fff;
+  font-family: var(--font-ibm);
+  line-height: 1.6;
 }
 
-/* Heading font */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  font-family: 'Zain', sans-serif;
-  font-weight: normal;
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-zain);
+  line-height: 1.2;
+  /* لا تغيّر المسافة بين الحروف العربية — تكسر اتصال الحروف */
+  letter-spacing: 0;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #115e59; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #0f766e; }
+
+:focus-visible {
+  outline: 2px solid #2dd4bf;
+  outline-offset: 2px;
 }
 
-::-webkit-scrollbar-track {
-  background: #000000;
+/* ── استجابة فورية لحظة الضغط ── */
+.press { transition: transform 380ms var(--spring); }
+.press:active { transform: scale(0.95); transition-duration: 90ms; transition-timing-function: ease-out; }
+
+/* ── شريط زجاجي ── */
+.glass-bar {
+  background: var(--glass);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-::-webkit-scrollbar-thumb {
+/* ── سطح البطاقات: نقش ثابت هادئ (بدون حركة خلف النص) ── */
+.card-surface {
+  background-color: #0b0f0f;
+  background-image: linear-gradient(135deg,
+    rgba(255,255,255,0.018) 25%, transparent 25%,
+    transparent 50%, rgba(255,255,255,0.018) 50%,
+    rgba(255,255,255,0.018) 75%, transparent 75%, transparent);
+  background-size: 40px 40px;
+}
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(22px) scale(0.965); }
+  to   { opacity: 1; transform: none; }
+}
+.unit-card {
+  transition: transform 420ms var(--spring), border-color 200ms ease, box-shadow 300ms ease;
+  animation: riseIn 640ms var(--spring) backwards;
+  animation-delay: calc(min(var(--i, 0), 10) * 55ms);
+}
+.unit-card[data-pressing="true"] { transform: scale(0.975); transition-duration: 120ms; }
+
+/* ── ظهور الرسائل ── */
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.chat-bubble { animation: bubbleIn 480ms var(--spring) both; }
+
+/* ── مؤشر الكتابة ── */
+@keyframes typingDot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40%           { opacity: 1;    transform: translateY(-2px); }
+}
+.typing-dot { animation: typingDot 1.1s ease-in-out infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* ── لوحة يزيد العائمة: انتقالات قابلة للمقاطعة (transition وليس keyframes) ── */
+.yz-panel {
+  transform-origin: bottom left;
+  transition: transform 560ms var(--spring), opacity 220ms ease;
+  will-change: transform;
+}
+.yz-panel[data-state="closed"] { transform: translateY(100%); pointer-events: none; }
+.yz-panel[data-state="open"]   { transform: none; opacity: 1; }
+.yz-panel[data-dragging="true"] { transition: none; }
+@media (min-width: 640px) {
+  .yz-panel[data-state="closed"] { transform: translateY(12px) scale(0.92); opacity: 0; }
+}
+
+/* ── نافذة الوحدة: تخرج من البطاقة وترجع إليها ── */
+.yz-dialog {
+  transition: transform 560ms var(--spring), opacity 260ms ease;
+}
+.yz-dialog[data-state="closed"] { transform: scale(0.9); opacity: 0; pointer-events: none; }
+.yz-dialog[data-state="open"]   { transform: none; opacity: 1; }
+
+.yz-scrim { transition: opacity 300ms ease; }
+.yz-scrim[data-state="closed"] { opacity: 0; pointer-events: none; }
+.yz-scrim[data-state="open"]   { opacity: 1; }
+
+/* ── زر يزيد: الحركة تعمل عند المرور فقط ── */
+@keyframes blobMorph {
+  0%, 100% { border-radius: 60% 40% 55% 45% / 45% 60% 40% 55%; }
+  25%      { border-radius: 42% 58% 38% 62% / 58% 42% 60% 40%; }
+  50%      { border-radius: 55% 45% 62% 38% / 40% 55% 45% 60%; }
+  75%      { border-radius: 38% 62% 48% 52% / 60% 38% 58% 42%; }
+}
+@keyframes blobSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.nebula-blob-a { animation: blobMorph 7s ease-in-out infinite, blobSpin 8s linear infinite; animation-play-state: paused; }
+.nebula-blob-b { animation: blobMorph 9s ease-in-out infinite reverse, blobSpin 11s linear infinite reverse; animation-play-state: paused; }
+.nebula-blob-core { animation: blobMorph 8s ease-in-out infinite; animation-play-state: paused; }
+.yz-fab:hover .nebula-blob-a,
+.yz-fab:hover .nebula-blob-b,
+.yz-fab:hover .nebula-blob-core,
+.yz-fab:focus-visible .nebula-blob-a,
+.yz-fab:focus-visible .nebula-blob-b,
+.yz-fab:focus-visible .nebula-blob-core { animation-play-state: running; }
+
+/* ── إمكانية الوصول ── */
+@media (prefers-reduced-motion: reduce) {
+  .nebula-blob-a, .nebula-blob-b, .nebula-blob-core, .typing-dot { animation: none !important; }
+  .chat-bubble { animation: none; }
+  .press:active, .unit-card[data-pressing="true"] { transform: none; }
+  .yz-panel, .yz-dialog { transition: opacity 180ms ease; }
+  .yz-panel[data-state="closed"], .yz-dialog[data-state="closed"] { transform: none; opacity: 0; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-bar { background: #000; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+@media (prefers-contrast: more) {
+  .glass-bar, .unit-card { border-color: rgba(255, 255, 255, 0.5) !important; }
+}
+
+/* ── لوحة الاختبار (Canvas): تكبر من بطاقة الاختبار وترجع إليها ── */
+.yz-canvas { transition: transform 580ms var(--spring), opacity 250ms ease; }
+.yz-canvas[data-state="closed"] { transform: scale(0.88); opacity: 0; pointer-events: none; }
+.yz-canvas[data-state="open"]   { transform: none; opacity: 1; }
+
+/* بطاقات المراجعة: تقليب ثلاثي الأبعاد */
+.yz-pop { animation: bubbleIn 460ms var(--spring) both; transform-origin: top left; }
+.fc-scene { perspective: 1200px; display: flex; }
+.fc-inner { position: relative; width: 100%; flex: 1; transform-style: preserve-3d; transition: transform 700ms var(--spring); }
+.fc-inner[data-flipped="true"] { transform: rotateY(180deg); }
+.fc-face { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1.5rem; border-width: 1px; border-style: solid; border-radius: 1.5rem; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.fc-back { transform: rotateY(180deg); }
+@keyframes nodePop {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: none; }
+}
+.mm-node {
+  transition: background-color 200ms ease, border-color 200ms ease, transform 380ms var(--spring);
+  animation: nodePop 520ms var(--spring) backwards;
+  animation-delay: calc(min(var(--d, 0), 18) * 32ms);
+}
+.mm-box { background-image: radial-gradient(#16201f 1.2px, transparent 1.2px); background-size: 26px 26px; }
+html[data-resizing] .ws-morph { transition: none !important; }
+html[data-resizing] body { user-select: none; cursor: col-resize; }
+@media (prefers-reduced-motion: reduce) { .fc-inner { transition: none; } }
+.quiz-step { animation: bubbleIn 520ms var(--spring) both; }
+.quiz-ring { transition: stroke-dashoffset 900ms var(--ease-ios); }
+
+/* نافذة الوحدة تفسح مكاناً للوحة الاختبار على الشاشات الكبيرة */
+.yz-shift { transition: padding 450ms var(--ease-ios); }
+
+@media (prefers-reduced-motion: reduce) {
+  .yz-canvas { transition: opacity 180ms ease; }
+  .yz-canvas[data-state="closed"] { transform: none; }
+  .quiz-step { animation: none; }
+  .quiz-ring, .yz-shift { transition: none; }
+  .unit-card, .mm-node, .yz-pop { animation: none; }
+}
+
+/* ── عارض صفحات الكتاب ── */
+.yz-viewer { transition: transform 580ms var(--spring), opacity 250ms ease; }
+.yz-viewer[data-state="closed"] { transform: translateX(-24px) scale(0.97); opacity: 0; pointer-events: none; }
+.yz-viewer[data-state="open"]   { transform: none; opacity: 1; }
+
+@keyframes hlIn {
+  from { clip-path: inset(0 0 0 100%); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+.page-hl {
+  /* لون موحّد: المربعات معتمة داخل طبقة واحدة تُدمج مع الصفحة (multiply)،
+     فلا تغمق الأطراف عند تداخل الأسطر */
+  background: #DCD0FF;
+  border-radius: 3px;
+  animation: hlIn 420ms var(--ease-ios) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yz-viewer { transition: opacity 180ms ease; }
+  .yz-viewer[data-state="closed"] { transform: none; }
+  .page-hl { animation: none; }
+}
+
+/* ── الكتاب (StPageFlip) ── */
+.book-desk {
+  background:
+    radial-gradient(90% 70% at 50% 45%, rgba(255, 255, 255, 0.07), transparent 70%),
+    radial-gradient(120% 80% at 50% 0%, rgba(20, 184, 166, 0.08), transparent 60%),
+    #0c1010;
+}
+.bk-host { filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.55)); }
+.bk-book { margin: 0 auto; }
+.bk-page { background: #fbfaf7; overflow: hidden; }
+.bk-paper { position: absolute; inset: 0; background: #fbfaf7; }
+.bk-img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 200ms ease; user-select: none; }
+.bk-img.ready { opacity: 1; }
+.bk-page .textLayer { z-index: 3; }
+.bk-page .hl-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; mix-blend-mode: multiply; }
+.bk-page .page-hl { position: absolute; pointer-events: none; }
+.area-rect { background: #DCD0FF; mix-blend-mode: multiply; border-radius: 4px; transition: opacity 200ms ease; }
+.bk-host { transition: opacity 260ms ease, transform 450ms var(--ease-ios); }
+.bk-host.is-settling { opacity: 0; transform: scale(0.985); }
+.ctx-menu { animation: bubbleIn 160ms var(--ease-ios) both; transform-origin: top center; }
+/* انحناء الورق عند الكعب: الصفحات اليمنى كعبها يسار، واليسرى كعبها يمين */
+.bk-gutter { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.stf__item.--right .bk-gutter { background: linear-gradient(to right, rgba(0,0,0,0.16), rgba(0,0,0,0.03) 6%, transparent 12%); }
+.stf__item.--left .bk-gutter { background: linear-gradient(to left, rgba(0,0,0,0.16), rgba(0,0,0,0.03) 6%, transparent 12%); }
+.bk-page[data-density="hard"] .bk-paper { box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15); }
+
+/* طبقة نص pdf.js (للتحديد) */
+.textLayer {
+  position: absolute; inset: 0; overflow: clip; line-height: 1; text-align: initial;
+  -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none;
+  transform-origin: 0 0; z-index: 2;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer span, .textLayer br {
+  color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%;
+  user-select: text; -webkit-user-select: text;
+}
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer ::selection { background: rgba(220, 208, 255, 0.55); color: transparent; }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
+
+@keyframes selMenuIn { from { opacity: 0; transform: translate(-50%, var(--sel-y, -100%)) scale(0.94); } }
+.sel-menu { animation: bubbleIn 180ms var(--ease-ios) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sel-menu { animation: none; }
+}
+
+/* ── بلاطة الأيقونة: تعبئة صلبة وأيقونة داكنة ── */
+.icon-tile {
   background: #0d9488;
-  border-radius: 9999px;
+  color: #04201d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 6px 16px -6px rgba(13, 148, 136, 0.55);
+}
+.icon-tile svg { stroke-width: 2.1; }
+
+/* ── مساحة العمل: النوافذ تنزلق وتتمدد بنعومة عند إعادة الترتيب ── */
+.ws-morph {
+  transition-property: transform, opacity, left, right, top, bottom, width, height;
+  transition-duration: 450ms, 260ms, 450ms, 450ms, 450ms, 450ms, 450ms, 450ms;
+  transition-timing-function: var(--ease-ios);
+}
+.yz-panel[data-dragging="true"] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ws-morph { transition-property: opacity; transition-duration: 180ms; }
+  .bk-host { transition: opacity 180ms ease; }
+  .bk-host.is-settling { transform: none; }
+  .page-hl { animation: none; }
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #0f766e;
-}
-
-/* Drawer animation - RTL slides from left */
-@keyframes slideInLeft {
-  from {
-    transform: translateX(-100%);
-  }
-
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes slideOutLeft {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(-100%);
-  }
-}
-
-.drawer-enter {
-  animation: slideInLeft 0.3s ease-out forwards;
-}
-
-.drawer-exit {
-  animation: slideOutLeft 0.3s ease-in forwards;
-}
-
-/* Modal fade */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.modal-overlay {
-  animation: fadeIn 0.2s ease-out forwards;
-}
-
-.modal-content {
-  animation: scaleIn 0.25s ease-out forwards;
-}
-
-/* Chat animation */
-@keyframes chatSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.chat-bubble {
-  animation: chatSlideUp 0.2s ease-out forwards;
-}
-
-/* ── Chat panel open/close ── */
-@keyframes chatPanelIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes chatPanelOut {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(16px) scale(0.97);
-  }
-}
-
-.chat-panel-enter {
-  animation: chatPanelIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.chat-panel-exit {
-  animation: chatPanelOut 0.18s ease-in forwards;
-  pointer-events: none;
-}
-
-/* ── Floating button bounce-in ── */
-@keyframes fabIn {
-  0%   { opacity: 0; transform: scale(0.6); }
-  70%  { transform: scale(1.12); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
-.fab-enter {
-  animation: fabIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
+/* ── وضع التركيز: المحتوى فقط في منتصف الشاشة ── */
+.focus-mode > * { align-self: center; width: min(100%, var(--focus-w, 780px)); }
+.focus-mode > .rz-handle { display: none; }
+.focus-mode .fm-hide { display: none; }
+.focus-mode > header { border-bottom-color: transparent; justify-content: flex-end; }
+.focus-mode > footer { border-top-color: transparent; }

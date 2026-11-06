@@ -1,6 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useCallback, useContext, useState, ReactNode } from "react";
+import type { Quiz } from "../lib/quiz";
+import type { AiMode, PageRange, StudyData } from "../lib/study";
 
 interface LessonAttachment {
   id: string;
@@ -23,12 +25,65 @@ interface Lesson {
 
 interface Unit {
   id: string;
+  /** رقم الفصل في الكتاب — غير موجود لبطاقة "الكتاب كاملاً" */
+  chapter?: number;
   title: string;
   description: string;
   icon: string;
-  lessonCount: number;
-  fileCount: number;
-  lessons: Lesson[];
+  pageCount: number;
+  pdfUrl: string;
+  lessons?: Lesson[];
+}
+
+type Point = { x: number; y: number };
+
+type AskFn = (text: string, opts?: { mode?: AiMode; pages?: PageRange }) => void;
+
+/** اختبار مفتوح في لوحة الـ Canvas */
+interface QuizSession {
+  id: string;
+  quiz: Quiz;
+  unitId: string | null;
+  unitTitle: string;
+  origin: Point | null;
+  /** يرسل رسالة للمحادثة التي أنشأت الاختبار */
+  ask: AskFn;
+}
+
+/** خريطة ذهنية أو بطاقات مفتوحة في لوحة الـ Canvas (تشغل نفس مكان الاختبار) */
+interface StudySession {
+  id: string;
+  study: StudyData;
+  unitTitle: string;
+  origin: Point | null;
+}
+
+/** صفحة مفتوحة في عارض الكتاب الجانبي */
+interface PageView {
+  /** رقم الصفحة في الكتاب كاملاً */
+  page: number;
+  /** نصوص يُبحث عنها في الصفحة لتظليلها (الإجابة، الشرح…) */
+  highlight: string[];
+  /** مفتاح فريد حتى يعاد الفتح حتى لو نفس الصفحة */
+  key: number;
+}
+
+/** طلب من عارض الكتاب ليزيد (اشرح/اختبرني/لخّص الجزء المحدد) */
+interface PendingAsk {
+  text: string;
+  mode: AiMode;
+  pages?: PageRange;
+  /** وحدة الفصل الذي فيه النص (null = كل الكتاب) */
+  unitId: string | null;
+  key: number;
+}
+
+/** نوافذ مساحة العمل — تُرتَّب جنباً إلى جنب، أو فوق بعض حسب آخر نافذة استُخدمت */
+type PanelId = "chat" | "quiz" | "book";
+
+interface QuizResult {
+  correct: number;
+  total: number;
 }
 
 interface AppContextType {
@@ -41,112 +96,121 @@ interface AppContextType {
   units: Unit[];
   updateUnit: (unit: Unit) => void;
   addUnit: (unit: Unit) => void;
-  // Long-press unit AI chat
+  // نافذة يزيد الخاصة بالوحدة
   unitChatUnit: Unit | null;
-  setUnitChatUnit: (unit: Unit | null) => void;
+  /** origin: النقطة التي تخرج منها النافذة (البطاقة/الزر) */
+  setUnitChatUnit: (unit: Unit | null, origin?: Point) => void;
+  unitChatOrigin: Point | null;
+  // لوحة الاختبار (Canvas)
+  activeQuiz: QuizSession | null;
+  openQuiz: (session: QuizSession) => void;
+  activeStudy: StudySession | null;
+  openStudy: (session: StudySession) => void;
+  closeStudy: () => void;
+  closeQuiz: () => void;
+  quizResults: Record<string, QuizResult>;
+  setQuizResult: (id: string, result: QuizResult) => void;
+  // عارض صفحات الكتاب
+  pageView: PageView | null;
+  openPage: (page: number, highlight?: string[]) => void;
+  closePage: () => void;
+  // إرسال سؤال ليزيد من خارج المحادثة
+  pendingAsk: PendingAsk | null;
+  askYazid: (text: string, mode: AiMode, unitId: string | null, pages?: PageRange) => void;
+  clearPendingAsk: () => void;
+  // ترتيب النوافذ: الأحدث استخداماً في الأعلى
+  panelWidth: Partial<Record<PanelId, number>>;
+  setPanelWidth: (id: PanelId, w: number | null) => void;
+  libraryOpen: boolean;
+  setLibraryOpen: (v: boolean) => void;
+  studyFocus: boolean;
+  setStudyFocus: (v: boolean) => void;
+  front: PanelId;
+  bringToFront: (id: PanelId) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const mockUnits: Unit[] = [
+const bookUnits: Unit[] = [
   {
     id: "1",
-    title: "الوحدة الأولى",
-    description: "محتوى الوحدة الأولى وملفها الخاص",
-    icon: "Calculator",
-    lessonCount: 4,
-    fileCount: 1,
-    lessons: [
-      { id: "1a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d1", name: "ملف الوحدة", type: "document", url: "/units/unit1.pdf" }] },
-    ],
+    title: "الكتاب كاملاً",
+    description: "كل فصول أحياء ١ في ملف واحد. اسأل يزيد عن أي موضوع في الكتاب.",
+    icon: "BookOpenText",
+    pageCount: 277,
+    pdfUrl: "/units/unit1.pdf",
   },
   {
     id: "2",
-    title: "الوحدة الثانية",
-    description: "محتوى الوحدة الثانية وملفها الخاص",
-    icon: "Shapes",
-    lessonCount: 4,
-    fileCount: 1,
-    lessons: [
-      { id: "2a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d2", name: "ملف الوحدة", type: "document", url: "/units/unit2.pdf" }] },
-    ],
+    chapter: 1,
+    title: "مدخل إلى علم الأحياء",
+    description: "خصائص الحياة، وطبيعة العلم، والطرائق العلمية التي يستخدمها علماء الأحياء.",
+    icon: "Microscope",
+    pageCount: 26,
+    pdfUrl: "/units/unit2.pdf",
   },
   {
     id: "3",
-    title: "الوحدة الثالثة",
-    description: "محتوى الوحدة الثالثة وملفها الخاص",
-    icon: "Atom",
-    lessonCount: 4,
-    fileCount: 1,
-    lessons: [
-      { id: "3a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d3", name: "ملف الوحدة", type: "document", url: "/units/unit3.pdf" }] },
-    ],
+    chapter: 2,
+    title: "تصنيف المخلوقات الحية",
+    description: "تاريخ التصنيف، ونظام التصنيف الحديث بممالكه الست.",
+    icon: "Network",
+    pageCount: 24,
+    pdfUrl: "/units/unit3.pdf",
   },
   {
     id: "4",
-    title: "الوحدة الرابعة",
-    description: "محتوى الوحدة الرابعة وملفها الخاص",
-    icon: "FlaskConical",
-    lessonCount: 4,
-    fileCount: 1,
-    lessons: [
-      { id: "4a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d4", name: "ملف الوحدة", type: "document", url: "/units/unit4.pdf" }] },
-    ],
+    chapter: 3,
+    title: "البكتيريا والفيروسات",
+    description: "الفيروسات والبريونات والبكتيريا: تراكيبها وكيف تهاجم الخلايا.",
+    icon: "Biohazard",
+    pageCount: 28,
+    pdfUrl: "/units/unit4.pdf",
   },
   {
     id: "5",
-    title: "الوحدة الخامسة",
-    description: "محتوى الوحدة الخامسة وملفها الخاص",
-    icon: "Microscope",
-    lessonCount: 4,
-    fileCount: 1,
-    lessons: [
-      { id: "5a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d5", name: "ملف الوحدة", type: "document", url: "/units/unit5.pdf" }] },
-    ],
+    chapter: 4,
+    title: "الطلائعيات",
+    description: "مخلوقات حقيقية النوى وحيدة الخلية أو متعددة الخلايا، وطرائق تغذيها وتكاثرها.",
+    icon: "Droplets",
+    pageCount: 32,
+    pdfUrl: "/units/unit5.pdf",
   },
   {
     id: "6",
-    title: "الوحدة السادسة",
-    description: "محتوى الوحدة السادسة وملفها الخاص",
-    icon: "Code",
-    lessonCount: 4,
-    fileCount: 1,
-    lessons: [
-      { id: "6a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: false, documents: [{ id: "d6", name: "ملف الوحدة", type: "document", url: "/units/unit6.pdf" }] },
-    ],
+    chapter: 5,
+    title: "الفطريات",
+    description: "خصائص الفطريات، وشعبها الأربع، وطرائق تغذيها وتكاثرها.",
+    icon: "Sprout",
+    pageCount: 26,
+    pdfUrl: "/units/unit6.pdf",
   },
   {
     id: "7",
-    title: "الوحدة السابعة",
-    description: "محتوى الوحدة السابعة وملفها الخاص",
-    icon: "Telescope",
-    lessonCount: 3,
-    fileCount: 1,
-    lessons: [
-      { id: "7a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d7", name: "ملف الوحدة", type: "document", url: "/units/unit7.pdf" }] },
-    ],
+    chapter: 6,
+    title: "مدخل إلى الحيوانات",
+    description: "خصائص الحيوانات، ومستويات بناء أجسامها، وتصنيفها.",
+    icon: "PawPrint",
+    pageCount: 34,
+    pdfUrl: "/units/unit7.pdf",
   },
   {
     id: "8",
-    title: "الوحدة الثامنة",
-    description: "محتوى الوحدة الثامنة وملفها الخاص",
-    icon: "Dna",
-    lessonCount: 3,
-    fileCount: 1,
-    lessons: [
-      { id: "8a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d8", name: "ملف الوحدة", type: "document", url: "/units/unit8.pdf" }] },
-    ],
+    chapter: 7,
+    title: "الديدان والرخويات",
+    description: "الديدان المفلطحة والأسطوانية والرخويات، وتكيفاتها للعيش في بيئات مختلفة.",
+    icon: "Snail",
+    pageCount: 34,
+    pdfUrl: "/units/unit8.pdf",
   },
   {
     id: "9",
-    title: "الوحدة التاسعة",
-    description: "محتوى الوحدة التاسعة وملفها الخاص",
-    icon: "Brain",
-    lessonCount: 3,
-    fileCount: 1,
-    lessons: [
-      { id: "9a", name: "الدرس الأول", hasVideo: true, hasPdf: true, hasQuiz: true, documents: [{ id: "d9", name: "ملف الوحدة", type: "document", url: "/units/unit9.pdf" }] },
-    ],
+    chapter: 8,
+    title: "المفصليات",
+    description: "خصائص المفصليات وتنوعها، والحشرات وتكيفاتها.",
+    icon: "Bug",
+    pageCount: 31,
+    pdfUrl: "/units/unit9.pdf",
   },
 ];
 
@@ -154,8 +218,78 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [units, setUnits] = useState<Unit[]>(mockUnits);
-  const [unitChatUnit, setUnitChatUnit] = useState<Unit | null>(null);
+  const [units, setUnits] = useState<Unit[]>(bookUnits);
+  const [unitChatUnit, setUnitChatUnitState] = useState<Unit | null>(null);
+  const [unitChatOrigin, setUnitChatOrigin] = useState<Point | null>(null);
+  const [front, setFront] = useState<PanelId>("chat");
+  const [studyFocus, setStudyFocus] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [panelWidth, setPanelWidthState] = useState<Partial<Record<PanelId, number>>>({});
+  const setPanelWidth = useCallback((id: PanelId, w: number | null) => {
+    setPanelWidthState((prev) => {
+      const next = { ...prev };
+      if (w == null) delete next[id];
+      else next[id] = Math.round(w);
+      return next;
+    });
+  }, []);
+  const [activeQuiz, setActiveQuiz] = useState<QuizSession | null>(null);
+  const [quizResults, setQuizResults] = useState<Record<string, QuizResult>>({});
+
+  const [pageView, setPageView] = useState<PageView | null>(null);
+  const openPage = useCallback(
+    (page: number, highlight: string[] = []) => {
+      setPageView({ page, highlight, key: Date.now() });
+      setFront("book");
+    },
+    []
+  );
+  const closePage = useCallback(() => setPageView(null), []);
+  const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null);
+  const askYazid = useCallback(
+    (text: string, mode: AiMode, unitId: string | null, pages?: PageRange) => {
+      setPendingAsk({ text, mode, unitId, pages, key: Date.now() });
+      setFront("chat");
+    },
+    []
+  );
+  const clearPendingAsk = useCallback(() => setPendingAsk(null), []);
+  const bringToFront = useCallback((id: PanelId) => setFront(id), []);
+  const [activeStudy, setActiveStudy] = useState<StudySession | null>(null);
+  const openQuiz = useCallback((session: QuizSession) => {
+    setActiveStudy(null);
+    setActiveQuiz(session);
+    setFront("quiz");
+  }, []);
+  const openStudy = useCallback((session: StudySession) => {
+    setActiveQuiz(null);
+    setActiveStudy(session);
+    setFront("quiz");
+  }, []);
+  const closeStudy = useCallback(() => {
+    setActiveStudy(null);
+    setStudyFocus(false);
+  }, []);
+  const closeQuiz = useCallback(() => {
+    setActiveQuiz(null);
+    setStudyFocus(false);
+  }, []);
+  const setQuizResult = useCallback(
+    (id: string, result: QuizResult) => setQuizResults((prev) => ({ ...prev, [id]: result })),
+    []
+  );
+
+  const setUnitChatUnit = useCallback((unit: Unit | null, origin?: Point) => {
+    if (unit) {
+      setUnitChatOrigin(origin ?? null);
+      setFront("chat");
+    }
+    setUnitChatUnitState(unit);
+  }, []);
+  const openChat = useCallback((open: boolean) => {
+    setIsChatOpen(open);
+    if (open) setFront("chat");
+  }, []);
 
   const updateUnit = (updated: Unit) => {
     setUnits((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
@@ -172,7 +306,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectedUnit,
         setSelectedUnit,
         isChatOpen,
-        setIsChatOpen,
+        setIsChatOpen: openChat,
         searchQuery,
         setSearchQuery,
         units,
@@ -180,6 +314,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addUnit,
         unitChatUnit,
         setUnitChatUnit,
+        unitChatOrigin,
+        activeQuiz,
+        openQuiz,
+        activeStudy,
+        openStudy,
+        closeStudy,
+        closeQuiz,
+        quizResults,
+        setQuizResult,
+        pageView,
+        openPage,
+        closePage,
+        pendingAsk,
+        askYazid,
+        clearPendingAsk,
+        front,
+        panelWidth,
+        setPanelWidth,
+        studyFocus,
+        setStudyFocus,
+        libraryOpen,
+        setLibraryOpen,
+        bringToFront,
       }}
     >
       {children}
@@ -195,4 +352,4 @@ export function useAppContext() {
   return context;
 }
 
-export type { Unit, Lesson, LessonAttachment };
+export type { Unit, Lesson, LessonAttachment, Point, QuizSession, StudySession, QuizResult, AskFn, PageView, PanelId };
