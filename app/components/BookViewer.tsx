@@ -72,8 +72,8 @@ export default function BookViewer() {
   // ── مقاس الصفحة: صفحتان متقابلتان إذا اتسعت المساحة، وإلا صفحة واحدة ──
   const stageRef = useRef<HTMLDivElement>(null);
   const stage = useSize(stageRef, mounted);
-  const padX = 56; // مساحة الأسهم
-  const padY = 24;
+  const padX = vw < 640 ? 8 : 56; // مساحة الأسهم (على الجوال الأسهم بالأسفل)
+  const padY = vw < 640 ? 64 : 24;
   const spreadW = Math.floor(Math.min((stage.w - padX * 2) / 2, (stage.h - padY * 2) / RATIO));
   const spread = spreadW >= 300;
   const pageW = Math.max(
@@ -791,11 +791,13 @@ export default function BookViewer() {
           </button>
         </div>
 
-        <p className="pointer-events-none absolute inset-x-0 bottom-3 z-10 mx-auto w-fit max-w-[70%] truncate rounded-full bg-black/50 px-4 py-1.5 text-center text-xs text-gray-300" role="status">
+        <p className="pointer-events-none absolute inset-x-0 bottom-3 z-10 mx-auto w-fit max-w-[62%] truncate rounded-full bg-black/50 px-4 py-1.5 text-center text-xs text-gray-300" role="status">
           {notice ??
             (hlVisible
-              ? "المظلّل هو مكان الإجابة · كلك يمين لتحديد منطقة وسؤال يزيد"
-              : "كلك يمين ← تحديد منطقة لتسأل عنها يزيد · اسحب زاوية الورقة لتقليبها")}
+              ? (vw < 640 ? "المظلّل هو مكان الإجابة" : "المظلّل هو مكان الإجابة · كلك يمين لتحديد منطقة وسؤال يزيد")
+              : vw < 640
+                ? "اسحب الصفحة لتقليبها · اضغط مطولاً أو استخدم أيقونة التحديد"
+                : "كلك يمين ← تحديد منطقة لتسأل عنها يزيد · اسحب زاوية الورقة لتقليبها")}
         </p>
       </section>
 

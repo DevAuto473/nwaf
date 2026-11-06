@@ -185,7 +185,7 @@ export default function LibraryDialog() {
                 </li>
               ))}
               {term.length >= 2 && !loading && shown.length === 0 && <li className="px-3 py-8 text-center text-sm text-gray-400">ما لقيت نتائج لـ «{term}»</li>}
-              {term.length < 2 && <li className="px-3 py-8 text-center text-sm text-gray-400">اكتب كلمتين على الأقل · Ctrl + K يفتح هذه النافذة بأي وقت</li>}
+              {term.length < 2 && <li className="px-3 py-8 text-center text-sm text-gray-400">اكتب كلمتين على الأقل<span className="hidden lg:inline"> · Ctrl + K يفتح هذه النافذة بأي وقت</span></li>}
             </ul>
           </>
         ) : (

@@ -175,7 +175,7 @@ function UnitCard({
         <button
           type="button"
           onClick={(e) => onAsk(centerOf(e.currentTarget))}
-          className="press flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-600 sm:flex-none"
+          className="press flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-600 sm:flex-none"
         >
           اسأل يزيد
           <Brain aria-hidden className="h-4 w-4" />
@@ -183,7 +183,7 @@ function UnitCard({
         <button
           type="button"
           onClick={onOpen}
-          className="press flex h-11 items-center justify-center gap-2 rounded-xl border border-[#2a3838] px-4 text-sm font-medium text-gray-100 hover:border-teal-600 hover:text-white"
+          className="press flex h-12 items-center justify-center gap-2 rounded-xl border border-[#2a3838] px-4 text-sm font-medium text-gray-100 hover:border-teal-600 hover:text-white"
         >
           فتح
           <BookOpen aria-hidden className="h-4 w-4" />
@@ -193,7 +193,7 @@ function UnitCard({
           download
           aria-label={`تحميل ${unit.title} PDF`}
           title="تحميل PDF"
-          className="press flex h-11 w-11 items-center justify-center rounded-xl border border-[#2a3838] text-gray-300 hover:border-teal-600 hover:text-white"
+          className="press flex h-12 w-12 items-center justify-center rounded-xl border border-[#2a3838] text-gray-300 hover:border-teal-600 hover:text-white"
         >
           <Download aria-hidden className="h-4 w-4" />
         </a>
