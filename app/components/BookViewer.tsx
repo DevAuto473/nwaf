@@ -531,9 +531,16 @@ export default function BookViewer() {
   useEffect(() => {
     if (!mounted) return;
     const up = () => setTimeout(readSelection, 0);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
     const change = () => {
       const s = window.getSelection();
       if (!s || s.isCollapsed) setMenu((m) => (m?.source === "area" ? m : null));
+      // باللمس: مقابض التحديد لا تطلق touchend، فنقرأ التحديد بعد أن يستقر
+      else if (coarse) {
+        clearTimeout(timer);
+        timer = setTimeout(readSelection, 450);
+      }
     };
     document.addEventListener("mouseup", up);
     document.addEventListener("touchend", up);
@@ -544,6 +551,7 @@ export default function BookViewer() {
       document.removeEventListener("touchend", up);
       document.removeEventListener("keyup", up);
       document.removeEventListener("selectionchange", change);
+      clearTimeout(timer);
     };
   }, [mounted, readSelection]);
 
@@ -828,7 +836,11 @@ export default function BookViewer() {
           aria-label="خيارات النص المحدد"
           onMouseDown={(e) => e.preventDefault()}
           className="sel-menu fixed z-[80] flex max-w-[min(94vw,460px)] flex-wrap items-center justify-center gap-1 rounded-2xl border border-[#1f2b2b] bg-[#0d1414] p-1.5 shadow-2xl shadow-black/60"
-          style={{ left: menu.x, top: menu.y, transform: `translate(-50%, ${menu.below ? "0" : "-100%"})` }}
+          style={
+            vw < 640
+              ? { left: "50%", bottom: "calc(env(safe-area-inset-bottom) + 84px)", transform: "translateX(-50%)" }
+              : { left: menu.x, top: menu.y, transform: `translate(-50%, ${menu.below ? "0" : "-100%"})` }
+          }
         >
           <MenuBtn onClick={() => act(short ? "define" : "explain")} label={short ? "وش معناها؟" : "اشرح لي"} icon={<Brain className="h-4 w-4" />} primary />
           <MenuBtn onClick={() => act("quiz")} label="اختبرني" icon={<ListChecks className="h-4 w-4" />} />
