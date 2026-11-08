@@ -371,6 +371,8 @@ export default function BookViewer() {
   const [areaMode, setAreaMode] = useState(false);
   const [areaRect, setAreaRect] = useState<Rect | null>(null); // بإحداثيات المسرح
   const areaStart = useRef<{ x: number; y: number } | null>(null);
+  // آخر مستطيل مرسوم، يُحدَّث لحظياً (رفع الإصبع قد يسبق إعادة الرسم باللمس)
+  const areaLive = useRef<Rect | null>(null);
 
   /** نص كل أسطر الكتاب الظاهرة داخل مستطيل (إحداثيات الشاشة) */
   const textInRect = useCallback((r: Rect) => {
@@ -438,7 +440,8 @@ export default function BookViewer() {
     const b = e.currentTarget.getBoundingClientRect();
     areaStart.current = { x: e.clientX - b.left, y: e.clientY - b.top };
     setMenu(null);
-    setAreaRect({ ...areaStart.current, w: 0, h: 0 });
+    areaLive.current = { ...areaStart.current, w: 0, h: 0 };
+    setAreaRect(areaLive.current);
   };
   const onAreaMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const s0 = areaStart.current;
@@ -446,10 +449,12 @@ export default function BookViewer() {
     const b = e.currentTarget.getBoundingClientRect();
     const x = clamp(e.clientX - b.left, 0, b.width);
     const y = clamp(e.clientY - b.top, 0, b.height);
-    setAreaRect({ x: Math.min(s0.x, x), y: Math.min(s0.y, y), w: Math.abs(x - s0.x), h: Math.abs(y - s0.y) });
+    areaLive.current = { x: Math.min(s0.x, x), y: Math.min(s0.y, y), w: Math.abs(x - s0.x), h: Math.abs(y - s0.y) };
+    setAreaRect(areaLive.current);
   };
   const onAreaUp = () => {
-    const r = areaRect;
+    const r = areaLive.current;
+    areaLive.current = null;
     areaStart.current = null;
     setAreaMode(false);
     if (!r || r.w < 12 || r.h < 8) {
@@ -773,7 +778,7 @@ export default function BookViewer() {
             >
               {!areaRect && (
                 <p className="pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 rounded-full bg-teal-700 px-4 py-2 text-sm font-medium text-white shadow-lg">
-                  اسحب مربعاً حول النص · Esc للإلغاء
+                  اسحب مربعاً حول النص{vw >= 1024 && " · Esc للإلغاء"}
                 </p>
               )}
             </div>
