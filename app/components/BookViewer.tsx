@@ -532,16 +532,28 @@ export default function BookViewer() {
     if (!mounted) return;
     const up = () => setTimeout(readSelection, 0);
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    let mouseDown = false;
+    const md = () => {
+      mouseDown = true;
+    };
+    const mu = () => {
+      mouseDown = false;
+    };
     const change = () => {
       const s = window.getSelection();
-      if (!s || s.isCollapsed) setMenu((m) => (m?.source === "area" ? m : null));
-      // باللمس: مقابض التحديد لا تطلق touchend، فنقرأ التحديد بعد أن يستقر
-      else if (coarse) {
+      if (!s || s.isCollapsed) {
         clearTimeout(timer);
-        timer = setTimeout(readSelection, 450);
+        setMenu((m) => (m?.source === "area" ? m : null));
+        return;
       }
+      // مقابض اللمس لا تطلق mouseup/touchend: نقرأ التحديد بعد أن يستقر (مع أي جهاز إدخال)
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!mouseDown) readSelection();
+      }, 450);
     };
+    document.addEventListener("mousedown", md, true);
+    document.addEventListener("mouseup", mu, true);
     document.addEventListener("mouseup", up);
     document.addEventListener("touchend", up);
     document.addEventListener("keyup", up);
@@ -551,6 +563,8 @@ export default function BookViewer() {
       document.removeEventListener("touchend", up);
       document.removeEventListener("keyup", up);
       document.removeEventListener("selectionchange", change);
+      document.removeEventListener("mousedown", md, true);
+      document.removeEventListener("mouseup", mu, true);
       clearTimeout(timer);
     };
   }, [mounted, readSelection]);
